@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DeepSeek Harness
+Comment=Launch the installed DeepSeek Harness desktop entry
+Exec=/usr/local/bin/launch-deepseek-harness
+Terminal=false
+OnlyShowIn=LXQt;
+X-GNOME-Autostart-enabled=true
+StartupNotify=false

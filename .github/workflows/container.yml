@@ -1,0 +1,136 @@
+name: Container image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose and Unraid configuration
+        run: ./tests/container-config.sh
+
+  resolve:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      asset_url: ${{ steps.release.outputs.asset_url }}
+      sha256: ${{ steps.release.outputs.sha256 }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve latest stable upstream release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="$(./scripts/latest-app-release.sh)"
+          tag="$(sed -n 's/^tag=//p' <<< "$release")"
+          asset_url="$(sed -n 's/^asset_url=//p' <<< "$release")"
+          sha256="$(sed -n 's/^sha256=//p' <<< "$release")"
+          [[ "$tag" =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          version="${tag#v}"
+          expected_url="https://github.com/dsh-tauri/deepseek-harness-desktop/releases/download/${tag}/Deepseek.Harness.Desktop_${version}_amd64.deb"
+          [[ "$asset_url" == "$expected_url" ]]
+          [[ "$sha256" =~ ^[0-9a-f]{64}$ ]]
+          {
+            echo "tag=$tag"
+            echo "asset_url=$asset_url"
+            echo "sha256=$sha256"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "Resolved upstream release: $tag"
+            echo "Verified asset URL: $asset_url"
+            echo "Expected SHA-256: $sha256"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build-pr:
+    if: github.event_name == 'pull_request'
+    needs: [resolve, validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build amd64 image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          build-args: |
+            APP_RELEASE_TAG=${{ needs.resolve.outputs.tag }}
+            APP_RELEASE_ASSET_URL=${{ needs.resolve.outputs.asset_url }}
+            APP_RELEASE_SHA256=${{ needs.resolve.outputs.sha256 }}
+          tags: ghcr.io/prv-ctech/deepseek-harness-tauri:${{ needs.resolve.outputs.version }}
+
+  publish:
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    needs: validate
+    concurrency:
+      group: ghcr-deepseek-harness-tauri-publish
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve latest stable upstream release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="$(./scripts/latest-app-release.sh)"
+          tag="$(sed -n 's/^tag=//p' <<< "$release")"
+          asset_url="$(sed -n 's/^asset_url=//p' <<< "$release")"
+          sha256="$(sed -n 's/^sha256=//p' <<< "$release")"
+          [[ "$tag" =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          version="${tag#v}"
+          expected_url="https://github.com/dsh-tauri/deepseek-harness-desktop/releases/download/${tag}/Deepseek.Harness.Desktop_${version}_amd64.deb"
+          [[ "$asset_url" == "$expected_url" ]]
+          [[ "$sha256" =~ ^[0-9a-f]{64}$ ]]
+          {
+            echo "tag=$tag"
+            echo "asset_url=$asset_url"
+            echo "sha256=$sha256"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "Resolved upstream release: $tag"
+            echo "Verified asset URL: $asset_url"
+            echo "Expected SHA-256: $sha256"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish amd64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            APP_RELEASE_TAG=${{ steps.release.outputs.tag }}
+            APP_RELEASE_ASSET_URL=${{ steps.release.outputs.asset_url }}
+            APP_RELEASE_SHA256=${{ steps.release.outputs.sha256 }}
+          tags: |
+            ghcr.io/prv-ctech/deepseek-harness-tauri:latest
+            ghcr.io/prv-ctech/deepseek-harness-tauri:${{ steps.release.outputs.version }}

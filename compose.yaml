@@ -1,0 +1,59 @@
+# Selkies runs as fixed UID/GID 1000:1000; PUID/PGID do not remap it.
+services:
+  desktop:
+    image: ${IMAGE:-ghcr.io/prv-ctech/deepseek-harness-tauri:latest}
+    build:
+      context: .
+    platform: linux/amd64
+    restart: unless-stopped
+    shm_size: 2gb
+    depends_on:
+      dind:
+        condition: service_healthy
+    group_add:
+      - "100"
+    environment:
+      SELKIES_ENABLE_BASIC_AUTH: "false"
+      SELKIES_ENABLE_HTTPS: "false"
+      DOCKER_HOST: tcp://dind:2375
+      # Keep the upstream startup URL out of container logs.
+      RUST_LOG: warn
+    expose:
+      - "8080"
+    networks:
+      - dind
+      - proxy
+    volumes:
+      - home:/home/ubuntu
+      - workspaces:/workspaces
+
+  dind:
+    image: docker:29.8.0-dind
+    platform: linux/amd64
+    privileged: true
+    restart: unless-stopped
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    expose:
+      - "2375"
+    volumes:
+      - docker-data:/var/lib/docker
+    networks:
+      - dind
+    healthcheck:
+      test: ["CMD", "docker", "--host=tcp://127.0.0.1:2375", "info"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+networks:
+  dind: {}
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-dsh-proxy}
+
+volumes:
+  home:
+  workspaces:
+  docker-data:

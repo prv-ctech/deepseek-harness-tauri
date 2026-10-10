@@ -1,0 +1,26 @@
+--- a/panel/lxqtpanel.cpp
++++ b/panel/lxqtpanel.cpp
+@@ -287,13 +287,6 @@
+     setPanelGeometry();
+ 
+     show();
+ 
+-    // show it the first time, despite setting
+-    if (mHidable)
+-    {
+-        showPanel(false);
+-        QTimer::singleShot(PANEL_HIDE_FIRST_TIME, this, SLOT(hidePanel()));
+-    }
+-
+     LXQtPanelApplication *a = reinterpret_cast<LXQtPanelApplication*>(qApp);
+     auto wmBackend = a->getWMBackend();
+ 
+--- a/panel/lxqtpanellimits.h
++++ b/panel/lxqtpanellimits.h
+@@ -35,7 +35,6 @@
+ #define PANEL_DEFAULT_BACKGROUND_COLOR "#CCCCCC"
+ 
+ #define PANEL_HIDE_DELAY 500
+-#define PANEL_HIDE_FIRST_TIME (5000 - PANEL_HIDE_DELAY)
+ 
+ #define PANEL_SHOW_DELAY 0

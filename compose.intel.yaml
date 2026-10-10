@@ -1,0 +1,7 @@
+# Optional Intel GPU: docker compose -f compose.yaml -f compose.intel.yaml up
+services:
+  desktop:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - ${RENDER_GID:?Set RENDER_GID to the host render group ID}

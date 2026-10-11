@@ -15,17 +15,19 @@ services:
     environment:
       SELKIES_ENABLE_BASIC_AUTH: "false"
       SELKIES_ENABLE_HTTPS: "false"
-      DOCKER_HOST: tcp://dind:2375
+      DOCKER_HOST: tcp://deepseek-harness-dind:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
       # Keep the upstream startup URL out of container logs.
       RUST_LOG: warn
     expose:
       - "8080"
     networks:
-      - dind
-      - proxy
+      - shared
     volumes:
       - home:/home/ubuntu
       - workspaces:/workspaces
+      - docker-certs-client:/certs/client:ro
 
   dind:
     image: docker:29.8.0-dind
@@ -33,27 +35,33 @@ services:
     privileged: true
     restart: unless-stopped
     environment:
-      DOCKER_TLS_CERTDIR: ""
+      DOCKER_TLS_CERTDIR: /certs
+      DOCKER_TLS_SAN: DNS:deepseek-harness-dind
     expose:
-      - "2375"
+      - "2376"
     volumes:
       - docker-data:/var/lib/docker
+      - docker-certs-ca:/certs/ca
+      - docker-certs-client:/certs/client
     networks:
-      - dind
+      shared:
+        aliases:
+          - deepseek-harness-dind
     healthcheck:
-      test: ["CMD", "docker", "--host=tcp://127.0.0.1:2375", "info"]
+      test: ["CMD", "docker", "--host=unix:///var/run/docker.sock", "info"]
       interval: 5s
       timeout: 5s
       retries: 12
       start_period: 15s
 
 networks:
-  dind: {}
-  proxy:
+  shared:
     external: true
-    name: ${PROXY_NETWORK:-dsh-proxy}
+    name: ${DSH_NETWORK:?Set DSH_NETWORK to an existing user-defined Docker network}
 
 volumes:
   home:
   workspaces:
   docker-data:
+  docker-certs-ca:
+  docker-certs-client:

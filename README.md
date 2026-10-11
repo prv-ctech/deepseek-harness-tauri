@@ -1,17 +1,14 @@
 # DeepSeek Harness Tauri remote desktop
 
-Runs the official Linux amd64 desktop in Selkies. Docker Compose includes a private Docker-in-Docker (DinD) sidecar for workloads launched by the desktop.
+Runs the official Linux amd64 desktop in Selkies. Docker Compose includes a Docker-in-Docker (DinD) sidecar for workloads launched by the desktop.
 
-## Proxy network setup
+## Network setup
 
-Selkies Basic Auth and HTTPS are disabled; backend is unauthenticated HTTP on container port `8080`. Default remote ingress is through a reverse proxy that enforces authentication and TLS. The trusted Docker host and every member of the trusted DinD bridge can also reach the desktop listener by its bridge IP. Treat `dsh-dind` (Unraid) and Compose's project-private `dind` network as trusted: only desktop and DinD may join; never attach unrelated containers. Keep the DinD service off `dsh-proxy`; that bridge is dedicated to desktop and reverse proxy only. Create the proxy bridge once on the Docker host and attach the reverse-proxy container:
+Selkies Basic Auth and HTTPS are disabled in both deployments. Selkies serves HTTP on container port `8080`; Pangolin handles browser authentication and public HTTPS, then forwards to the desktop over HTTP ([resource types](https://docs.pangolin.net/manage/resources/understanding-resources), [HTTP target setup](https://docs.pangolin.net/manage/common-api-routes)). No Unraid host port is needed: configure the Pangolin HTTP target as `deepseek-harness-tauri:8080`. For Compose, the target is `desktop:8080`.
 
-```sh
-docker network create --driver bridge dsh-proxy
-docker network connect dsh-proxy <reverse-proxy-container-name>
-```
+Select the same existing **user-defined Docker bridge network** for the desktop, DinD, and Pangolin Site connector. Docker supplies container-name DNS on user-defined bridges, so each service can reach the others by container name ([bridge network docs](https://docs.docker.com/engine/network/drivers/bridge/)). For Unraid, choose the same network in both templates and connect the Pangolin Site connector to it. For Compose and Podman, set `DSH_NETWORK` to that existing network's name. The templates and Compose file do not create or assume a network name.
 
-Docker provides container-name DNS on user-defined bridges ([bridge network docs](https://docs.docker.com/engine/network/drivers/bridge/)); configure proxy upstream as `desktop:8080` in Compose or `deepseek-harness-desktop:8080` on Unraid. By default, publish no Selkies host port. If the reverse proxy runs as a host process, use a local Compose override with only this loopback mapping:
+All containers on a shared bridge can reach each other's container ports. The DinD API requires client-authenticated TLS; only the desktop gets the client certificates. Do not publish the DinD API port `2376` on the host. The desktop WebUI also has no host-published port by default. If a Compose reverse proxy runs as a host process, use a local override with only this loopback mapping:
 
 ```yaml
 services:
@@ -24,14 +21,16 @@ Docker Engine `28.0.0` or newer is required unless a host firewall protects the 
 
 ## Docker Compose
 
-Requires Docker Engine with the Compose plugin on an amd64 host. Set `PROXY_NETWORK` in `.env` to the existing proxy bridge (default `dsh-proxy`), then start:
+Requires Docker Engine with the Compose plugin on an amd64 host. Copy `.env.example`, then set `DSH_NETWORK` in `.env` to the existing user-defined Docker network shared with Pangolin. The example value is a placeholder:
 
 ```sh
 cp .env.example .env
+# Replace the DSH_NETWORK placeholder in .env with your existing network name.
+docker network inspect your-existing-docker-network
 docker compose up -d
 ```
 
-Compose connects desktop service `desktop` to the project-private DinD bridge and external proxy bridge; DinD joins only the private bridge. DinD retains outbound connectivity for image pulls, while port `2375` is not published. Compose persists named volumes `home` (`/home/ubuntu`), `workspaces` (`/workspaces`), and `docker-data` (`/var/lib/docker`). To pull the latest published image, run `docker compose pull desktop` then `docker compose up -d`. To build locally from the latest upstream stable release without reusing a cached resolver layer, run:
+Use the same network name in `docker network inspect` and `.env`. Compose connects both services to that existing network. DinD retains outbound connectivity for image pulls and serves its client-authenticated TLS API on container port `2376`, with no host port published. Compose persists named volumes `home` (`/home/ubuntu`), `workspaces` (`/workspaces`), `docker-data` (`/var/lib/docker`), `docker-certs-ca` (DinD CA), and `docker-certs-client` (client certificates; mounted read-only in the desktop). To pull the latest published image, run `docker compose pull desktop` then `docker compose up -d`. To build locally from the latest upstream stable release without reusing a cached resolver layer, run:
 
 ```sh
 docker compose build --no-cache desktop
@@ -46,38 +45,34 @@ docker compose -f compose.yaml -f compose.intel.yaml up -d
 
 ## Podman Desktop
 
-For a local browser test, create the external proxy bridge once if needed and copy `.env.example` to `.env` on first setup only. Keep `COMPOSE_PROJECT_NAME` unchanged for builds and updates so Podman reuses the same named volumes. Do not use `down -v` unless you intend to delete settings and workspace data:
+For a local browser test, set `DSH_NETWORK` in `.env` to an existing user-defined Podman network shared with Pangolin. Copy `.env.example` on first setup and replace its placeholder value. Keep `COMPOSE_PROJECT_NAME` unchanged for builds and updates so Podman reuses the same named volumes. Do not use `down -v` unless you intend to delete settings and workspace data:
 
 ```sh
-podman network create dsh-proxy
 cp .env.example .env
+# Replace the DSH_NETWORK placeholder in .env first.
+podman network inspect your-existing-docker-network
 podman compose build --no-cache desktop
 printf 'services:\n  desktop:\n    ports:\n      - "127.0.0.1:18080:8080"\n' | podman compose -f compose.yaml -f - up -d
 ```
 
-Open `http://127.0.0.1:18080`. The host port is loopback-only because Selkies has no login in this setup. The `deepseek-harness_home` volume stores Tauri settings under `/home/ubuntu/.local/share/dsh-tauri`, DSH data under `/home/ubuntu/.dsh`, and the default workspace under `/home/ubuntu/Documents/deepseek-harness/default-workspace`. `deepseek-harness_workspaces` stores `/workspaces`, and `deepseek-harness_docker-data` stores the DinD images and volumes. Container recreation and image updates keep these volumes. Inspect their host storage paths with `podman volume inspect deepseek-harness_home deepseek-harness_workspaces deepseek-harness_docker-data`.
+Open `http://127.0.0.1:18080`. This local Compose test uses HTTP without Selkies login, so keep the host port loopback-only. The `deepseek-harness_home` volume stores Tauri settings under `/home/ubuntu/.local/share/dsh-tauri`, DSH data under `/home/ubuntu/.dsh`, and the default workspace under `/home/ubuntu/Documents/deepseek-harness/default-workspace`. `deepseek-harness_workspaces` stores `/workspaces`, and `deepseek-harness_docker-data` stores the DinD images and volumes. Container recreation and image updates keep these volumes. Inspect their host storage paths with `podman volume inspect deepseek-harness_home deepseek-harness_workspaces deepseek-harness_docker-data`.
 
 ## Unraid
 
-Use both [desktop](templates/deepseek-harness-desktop.xml) and [DinD](templates/deepseek-harness-dind.xml) v2 templates. Create the private DinD bridge before installing either container; it is a normal bridge with outbound access, not an `internal` network:
+The [desktop template](templates/deepseek-harness-tauri.xml) runs the Selkies browser desktop. Access it through a Pangolin HTTP/HTTPS resource; the Unraid template does not publish port `8080` on the host. The [DinD template](templates/deepseek-harness-dind.xml) supplies a Docker daemon for container workloads; it is not the desktop WebUI. Install and start DinD first so it generates TLS client certificates. Then install the desktop template.
 
-```sh
-docker network create --driver bridge dsh-dind
-```
-
-Both templates use primary network `custom:dsh-dind`; Docker DNS resolves DinD as `deepseek-harness-dind`. Treat `dsh-dind` as trusted and attach only the desktop and DinD; unrelated containers must not join. Only desktop has `<ExtraNetworks>dsh-proxy</ExtraNetworks>` and joins `dsh-proxy`, which is dedicated to the desktop and reverse proxy only; unrelated containers must not join, and DinD must stay off it. The trusted Docker host and `dsh-dind` members can reach the unauthenticated desktop listener on `8080` by its bridge IP, so default remote ingress must remain through the reverse proxy at `deepseek-harness-desktop:8080`. Neither web port nor DinD `2375` is host-published by default, and the desktop template has no direct WebUI. Do not use Unraid's `Custom: br0` for these private links: `br0` is a LAN-facing custom macvlan/ipvlan network, not a private bridge ([Unraid container networking](https://docs.unraid.net/unraid-os/using-unraid-to/run-docker-containers/managing-and-customizing-containers/)).
-
-The current Unraid Docker Manager source reads template `<ExtraNetworks>`, splits comma/space-separated network names, and connects them after container creation ([manager creation path](https://github.com/unraid/webgui/blob/master/emhttp/plugins/dynamix.docker.manager/include/CreateDocker.php), [network connection helper](https://github.com/unraid/webgui/blob/master/emhttp/plugins/dynamix.docker.manager/include/Helpers.php)). Actual support depends on the installed Unraid version; confirm that its Docker Manager supports this field before using the template.
+In each template, select the same existing user-defined Docker network and connect the Pangolin Site connector to it. The template's initial `bridge` selection is a neutral placeholder—change it to your network. Keep the DinD container name `deepseek-harness-dind`; Docker DNS and the TLS server certificate use that name. DinD listens on container port `2376`, and the desktop mounts only its client certificate directory read-only at `/certs/client`. If you change DinD's certificate host path, update the desktop client certificate host path to the matching `client` subdirectory. Do not add an Unraid Port mapping for `2376`: containers on the shared network can connect directly, and TLS verifies the client. Pangolin's HTTP target is `deepseek-harness-tauri:8080`. Selkies authentication and HTTPS are disabled; Pangolin owns browser authentication and public TLS. Do not use Unraid's `Custom: br0` when you need container-name DNS: Docker documents automatic name resolution on user-defined bridge networks, while the default bridge and other drivers differ ([Unraid container networking](https://docs.unraid.net/unraid-os/using-unraid-to/run-docker-containers/managing-and-customizing-containers/), [Docker bridge networking](https://docs.docker.com/engine/network/drivers/bridge/)).
 
 Default persistent host paths:
 
-| Container path    | Unraid host path                                 | Data                                                               |
-| ----------------- | ------------------------------------------------ | ------------------------------------------------------------------ |
-| `/home/ubuntu`    | `/mnt/user/appdata/deepseek-harness/home`        | App settings, logs, user-installed tools, and default `$HOME/.dsh` |
-| `/workspaces`     | `/mnt/user/appdata/deepseek-harness/workspaces`  | Project files                                                      |
-| `/var/lib/docker` | `/mnt/user/appdata/deepseek-harness/docker-data` | DinD images, containers, and volumes                               |
+| Container path    | Unraid host path                                  | Data                                                                 |
+| ----------------- | ------------------------------------------------- | -------------------------------------------------------------------- |
+| `/home/ubuntu`    | `/mnt/user/appdata/deepseek-harness/home`         | App settings, logs, user-installed tools, and default `$HOME/.dsh`   |
+| `/workspaces`     | `/mnt/user/appdata/deepseek-harness/workspaces`   | Project files                                                        |
+| `/var/lib/docker` | `/mnt/user/appdata/deepseek-harness/docker-data`  | DinD images, containers, and volumes                                 |
+| `/certs`          | `/mnt/user/appdata/deepseek-harness/docker-certs` | DinD TLS certificates; desktop mounts only `/certs/client` read-only |
 
-The upstream Selkies desktop runs as UID `1000`; the template keeps that non-root runtime user and adds supplemental GID `100`. Do not use PUID/PGID remapping or run the desktop as root. Unraid appdata is commonly owned by `nobody:users` (`99:100`). Setgid on the app's home/workspaces directories makes new children inherit GID `100`; the image sets the session umask to `0002`, supplying group-write for ordinary new files created with the usual `0666` mode. Selkies 2.0.0's [`/etc/container-entrypoint.sh`](https://github.com/selkies-project/selkies/blob/2.0.0/addons/base/container-entrypoint.sh) hands off via `exec s6-svscan /etc/service`, so this umask is inherited by its supervised session ([startup docs](https://docs.selkies.io/latest/components/base-image#how-it-starts)). Local mode reproduction: setgid directory plus umask `0022` produced `0644` with GID `100`; umask `0002` produced `0664` with GID `100`.
+The upstream Selkies desktop runs as UID:GID `1000:1000`; the template keeps that non-root runtime identity and adds supplemental GID `100`. Do not use PUID/PGID remapping or run the desktop as root. Unraid appdata is commonly owned by `nobody:users` (`99:100`). Setgid on the app's home/workspaces directories makes new children inherit GID `100`; the image sets the session umask to `0002`, supplying group-write for ordinary new files created with the usual `0666` mode. Selkies 2.0.0's [`/etc/container-entrypoint.sh`](https://github.com/selkies-project/selkies/blob/2.0.0/addons/base/container-entrypoint.sh) hands off via `exec s6-svscan /etc/service`, so this umask is inherited by its supervised session ([startup docs](https://docs.selkies.io/latest/components/base-image#how-it-starts)). Local mode reproduction: setgid directory plus umask `0022` produced `0644` with GID `100`; umask `0002` produced `0664` with GID `100`.
 
 Before adding/applying the Unraid desktop template, prepare host bind paths from the Unraid terminal so template Apply cannot start the desktop against unprepared mounts. For an existing install, stop the desktop first. Bind mounts hide image-owned directory metadata, so home/workspaces host roots need GID `100` and setgid before first start; umask controls file modes, not host ownership or setgid. Run:
 
@@ -108,6 +103,6 @@ GitHub Actions builds `linux/amd64` on pull requests without publishing. Pushes 
 
 ## Security
 
-Selkies Basic Auth and HTTPS are disabled in the provided deployments, so the backend is unauthenticated HTTP. The reverse proxy is the default remote ingress and must enforce authentication **and** TLS; TLS alone is insufficient. Although no port is published by default, the trusted Docker host and any `dsh-dind` bridge member can connect to the listener by desktop bridge IP. Keep `dsh-dind` limited to desktop+DinD and `dsh-proxy` limited to desktop+reverse proxy; neither network is for unrelated containers. See [Selkies Secure Mode](https://docs.selkies.io/latest/secure-mode) for Selkies authentication modes.
+Selkies Basic Auth and HTTPS are disabled because Pangolin handles browser authentication, access rules, and public HTTPS. No host port is published by default. The desktop's trusted network peers can reach its HTTP listener on container port `8080`; see [Pangolin resources](https://docs.pangolin.net/manage/resources/understanding-resources) and [Selkies settings](https://docs.selkies.io/latest/reference/settings).
 
-DinD runs `privileged: true`: desktop users can control its unauthenticated Docker daemon, and a compromised privileged container can threaten the host. Keep port `2375` private (the provided Compose/Unraid setup does not publish it), never mount the host Docker socket, and run only on a trusted or isolated host.
+DinD runs `privileged: true`: desktop users can control its Docker daemon through the client certificate, and a compromised privileged container can threaten the host. The daemon requires mutual TLS on port `2376`; keep the client certificate protected, do not publish the port, never mount the host Docker socket, and run only on a trusted host.

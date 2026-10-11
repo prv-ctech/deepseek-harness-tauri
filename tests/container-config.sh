@@ -51,12 +51,12 @@ assert dind.findtext("Name") == "deepseek-harness-dind"
 assert dind.findtext("Network") == "bridge"
 assert "deepseek-harness-dind" in dind.findtext("Overview", "")
 assert "2376" in dind.findtext("Overview", "")
-assert desktop.find("./Config[@Target='/home/ubuntu']").get("Default") == "/mnt/user/appdata/deepseek-harness/home"
-assert desktop.find("./Config[@Target='/workspaces']").get("Default") == "/mnt/user/appdata/deepseek-harness/workspaces"
-assert dind.find("./Config[@Target='/var/lib/docker']").get("Default") == "/mnt/user/appdata/deepseek-harness/docker-data"
-assert dind.find("./Config[@Target='/certs']").get("Default") == "/mnt/user/appdata/deepseek-harness/docker-certs"
+assert desktop.find("./Config[@Target='/home/ubuntu']").get("Default") == "/mnt/cache/appdata/deepseek-harness-tauri/home"
+assert desktop.find("./Config[@Target='/workspaces']").get("Default") == "/mnt/cache/appdata/deepseek-harness-tauri/workspaces"
+assert dind.find("./Config[@Target='/var/lib/docker']").get("Default") == "/mnt/cache/appdata/deepseek-harness-tauri/docker-data"
+assert dind.find("./Config[@Target='/certs']").get("Default") == "/mnt/cache/appdata/deepseek-harness-tauri/docker-certs"
 client_certs = desktop.find("./Config[@Target='/certs/client']")
-assert client_certs.get("Default") == "/mnt/user/appdata/deepseek-harness/docker-certs/client"
+assert client_certs.get("Default") == "/mnt/cache/appdata/deepseek-harness-tauri/docker-certs/client"
 assert client_certs.get("Mode") == "ro"
 assert not desktop.findall("./Config[@Type='Port']")
 assert desktop.find("./Config[@Target='PASSWD']") is None

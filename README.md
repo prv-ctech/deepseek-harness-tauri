@@ -65,25 +65,25 @@ In each template, select the same existing user-defined Docker network and conne
 
 Default persistent host paths:
 
-| Container path    | Unraid host path                                  | Data                                                                 |
-| ----------------- | ------------------------------------------------- | -------------------------------------------------------------------- |
-| `/home/ubuntu`    | `/mnt/user/appdata/deepseek-harness/home`         | App settings, logs, user-installed tools, and default `$HOME/.dsh`   |
-| `/workspaces`     | `/mnt/user/appdata/deepseek-harness/workspaces`   | Project files                                                        |
-| `/var/lib/docker` | `/mnt/user/appdata/deepseek-harness/docker-data`  | DinD images, containers, and volumes                                 |
-| `/certs`          | `/mnt/user/appdata/deepseek-harness/docker-certs` | DinD TLS certificates; desktop mounts only `/certs/client` read-only |
+| Container path    | Unraid host path                                         | Data                                                                 |
+| ----------------- | -------------------------------------------------------- | -------------------------------------------------------------------- |
+| `/home/ubuntu`    | `/mnt/cache/appdata/deepseek-harness-tauri/home`         | App settings, logs, user-installed tools, and default `$HOME/.dsh`   |
+| `/workspaces`     | `/mnt/cache/appdata/deepseek-harness-tauri/workspaces`   | Project files                                                        |
+| `/var/lib/docker` | `/mnt/cache/appdata/deepseek-harness-tauri/docker-data`  | DinD images, containers, and volumes                                 |
+| `/certs`          | `/mnt/cache/appdata/deepseek-harness-tauri/docker-certs` | DinD TLS certificates; desktop mounts only `/certs/client` read-only |
 
 The upstream Selkies desktop runs as UID:GID `1000:1000`; the template keeps that non-root runtime identity and adds supplemental GID `100`. Do not use PUID/PGID remapping or run the desktop as root. Unraid appdata is commonly owned by `nobody:users` (`99:100`). Setgid on the app's home/workspaces directories makes new children inherit GID `100`; the image sets the session umask to `0002`, supplying group-write for ordinary new files created with the usual `0666` mode. Selkies 2.0.0's [`/etc/container-entrypoint.sh`](https://github.com/selkies-project/selkies/blob/2.0.0/addons/base/container-entrypoint.sh) hands off via `exec s6-svscan /etc/service`, so this umask is inherited by its supervised session ([startup docs](https://docs.selkies.io/latest/components/base-image#how-it-starts)). Local mode reproduction: setgid directory plus umask `0022` produced `0644` with GID `100`; umask `0002` produced `0664` with GID `100`.
 
 Before adding/applying the Unraid desktop template, prepare host bind paths from the Unraid terminal so template Apply cannot start the desktop against unprepared mounts. For an existing install, stop the desktop first. Bind mounts hide image-owned directory metadata, so home/workspaces host roots need GID `100` and setgid before first start; umask controls file modes, not host ownership or setgid. Run:
 
 ```sh
-mkdir -p /mnt/user/appdata/deepseek-harness/home /mnt/user/appdata/deepseek-harness/workspaces
-chown -R 99:100 /mnt/user/appdata/deepseek-harness/home /mnt/user/appdata/deepseek-harness/workspaces
-find /mnt/user/appdata/deepseek-harness/home /mnt/user/appdata/deepseek-harness/workspaces -type d -exec chmod u+rwx,g+rwx,g+s {} +
-find /mnt/user/appdata/deepseek-harness/home /mnt/user/appdata/deepseek-harness/workspaces -type f -exec chmod g+rwX {} +
+mkdir -p /mnt/cache/appdata/deepseek-harness-tauri/home /mnt/cache/appdata/deepseek-harness-tauri/workspaces
+chown -R 99:100 /mnt/cache/appdata/deepseek-harness-tauri/home /mnt/cache/appdata/deepseek-harness-tauri/workspaces
+find /mnt/cache/appdata/deepseek-harness-tauri/home /mnt/cache/appdata/deepseek-harness-tauri/workspaces -type d -exec chmod u+rwx,g+rwx,g+s {} +
+find /mnt/cache/appdata/deepseek-harness-tauri/home /mnt/cache/appdata/deepseek-harness-tauri/workspaces -type f -exec chmod g+rwX {} +
 ```
 
-`mkdir -p` is safe for existing directories. If you replace template host paths, substitute your chosen home/workspaces paths in every command. After preparation, install/apply and start the desktop. If template Apply auto-starts before preparation and this cannot be avoided, stop the desktop immediately, run this sequence with it stopped, then restart before use. These commands affect only this app's home and workspaces; do not apply them to DinD data or chmod all of `/mnt/user/appdata`. To verify new-file behavior, open a Selkies desktop terminal (not `docker exec`, whose process does not inherit PID 1's umask) and run:
+`mkdir -p` is safe for existing directories. If you replace template host paths, substitute your chosen home/workspaces paths in every command. After preparation, install/apply and start the desktop. If template Apply auto-starts before preparation and this cannot be avoided, stop the desktop immediately, run this sequence with it stopped, then restart before use. These commands affect only this app's home and workspaces; do not apply them to DinD data or chmod all of `/mnt/cache/appdata`. To verify new-file behavior, open a Selkies desktop terminal (not `docker exec`, whose process does not inherit PID 1's umask) and run:
 
 ```sh
 (

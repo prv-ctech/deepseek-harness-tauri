@@ -10,8 +10,8 @@
   <Project>https://www.docker.com/</Project>
   <Category>Tools:System</Category>
 
-  <Config Name="Docker data" Target="/var/lib/docker" Default="/mnt/user/appdata/deepseek-harness/docker-data" Mode="rw" Description="Persistent DinD image, container, and volume data." Type="Path" Display="always" Required="true" Mask="false"/>
-  <Config Name="Docker TLS certificates" Target="/certs" Default="/mnt/user/appdata/deepseek-harness/docker-certs" Mode="rw" Description="Persistent TLS certificates. The desktop receives only the client subdirectory as a read-only mount." Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="Docker data" Target="/var/lib/docker" Default="/mnt/cache/appdata/deepseek-harness-tauri/docker-data" Mode="rw" Description="Persistent DinD image, container, and volume data." Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="Docker TLS certificates" Target="/certs" Default="/mnt/cache/appdata/deepseek-harness-tauri/docker-certs" Mode="rw" Description="Persistent TLS certificates. The desktop receives only the client subdirectory as a read-only mount." Type="Path" Display="always" Required="true" Mask="false"/>
   <Config Name="DinD TLS certificate directory" Target="DOCKER_TLS_CERTDIR" Default="/certs" Description="Enables the official DinD image's client-authenticated TLS API on container port 2376. Do not add an Unraid Port mapping." Type="Variable" Display="advanced" Required="true" Mask="false"/>
   <Config Name="DinD TLS server DNS name" Target="DOCKER_TLS_SAN" Default="DNS:deepseek-harness-dind" Description="Adds the stable container name to the DinD server certificate so the desktop can verify its TLS endpoint." Type="Variable" Display="advanced" Required="true" Mask="false"/>
 </Container>
